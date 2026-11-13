@@ -33,6 +33,7 @@ function socketRoom(socket) {
 }
 
 io.on("connection", socket => {
+  console.log("[CONNECTED]", socket.id);
   socket.on("room:create", (data, cb = () => {}) => {
     const name = cleanName(data?.name);
     if (!name) return cb({ ok: false, error: "Please enter your name." });
@@ -70,6 +71,7 @@ io.on("connection", socket => {
       socket.leave(previous.code);
     }
     room.players.set(socket.id, { id: socket.id, name });
+    console.log("[PLAYER JOINED]", name, "Room:", code, "Total:", room.players.size);
     socket.join(code);
     socket.data.roomCode = code;
     cb({ ok: true, room: roomView(room) });
@@ -145,6 +147,7 @@ io.on("connection", socket => {
     const room = socketRoom(socket);
     if (!room) return;
     room.players.delete(socket.id);
+    console.log("[DISCONNECTED]", socket.id, "Room:", room.code, "Remaining:", room.players.size);
     delete room.votes[socket.id];
     if (!room.players.size) { rooms.delete(room.code); return; }
     if (room.hostId === socket.id) room.hostId = room.players.keys().next().value;
