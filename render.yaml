@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: the-mystery-at-prachi-mansion
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start

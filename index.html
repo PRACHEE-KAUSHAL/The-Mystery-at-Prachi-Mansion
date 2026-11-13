@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Mystery at Prachi Mansion</title>
+<style>
+:root{color-scheme:dark;--gold:#e8c875;--muted:#c0c1ce}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top,#39334d,#11121a 68%);color:#faf7f0;font-family:system-ui,sans-serif}
+main{width:min(760px,92%);margin:30px auto;padding:12px}.hero{text-align:center;margin:12px 0 26px}
+.eyebrow{letter-spacing:.2em;color:var(--gold);font-size:.75rem;font-weight:700}
+h1{font-family:Georgia,serif;font-size:clamp(2rem,7vw,3.5rem);line-height:1.05;color:#fff0c9;margin:12px 0}
+.hero p,.note{color:var(--muted)}.panel{background:rgba(32,34,53,.96);border:1px solid #4b4961;border-radius:18px;padding:22px;margin:14px 0;box-shadow:0 12px 36px #0004}
+label{display:block;color:var(--muted);font-size:.92rem;margin:13px 0 6px}
+input{width:100%;padding:13px;border-radius:10px;border:1px solid #62617a;background:#131522;color:white;font:inherit}
+button{border:0;border-radius:10px;padding:12px 16px;margin:8px 7px 0 0;font:inherit;font-weight:750;cursor:pointer;background:var(--gold);color:#27202a}
+button.secondary{background:#484a63;color:white}button:disabled{opacity:.45;cursor:not-allowed}
+.actions{display:flex;flex-wrap:wrap;gap:7px}.hidden{display:none!important}
+.code{font-size:2.5rem;letter-spacing:.22em;text-align:center;font-weight:850;color:var(--gold);margin:8px}
+.players{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px;margin:14px 0}
+.player{background:#2b2e45;border-radius:10px;padding:12px}.player small{color:var(--gold)}
+.role{font-size:1.55rem;font-weight:850;color:var(--gold);margin-top:8px}
+.alert{color:#ffd2a7;min-height:1.4em;margin-top:12px}.footer{text-align:center;color:#9294a8;font-size:.8rem;margin:25px}
+</style></head>
+<body><main>
+<header class="hero"><div class="eyebrow">A MULTIPLAYER MYSTERY PARTY GAME</div>
+<h1>THE MYSTERY AT<br>PRACHI MANSION</h1>
+<p>One missing heirloom. One hidden suspect. Can your friends solve the mystery?</p></header>
+<section class="panel" id="entry"><h2>Enter the mansion</h2>
+<label for="name">Your player name</label><input id="name" maxlength="24" placeholder="e.g. Pracho">
+<div class="actions"><button id="create">Create a room</button></div>
+<label for="code">Join with a 5-character room code</label><input id="code" maxlength="5" placeholder="ABCDE" autocomplete="off">
+<button id="join" class="secondary">Join room</button>
+<p class="note">At least 3 players are needed to start. Share the code with your friends.</p></section>
+<section class="panel hidden" id="lobby"><div class="eyebrow" style="text-align:center">YOUR ROOM CODE</div>
+<div class="code" id="roomCode">-----</div><div class="actions" style="justify-content:center"><button id="copy" class="secondary">Copy room code</button></div>
+<p class="note" id="roomStatus">Waiting for players…</p><div class="players" id="players"></div>
+<div class="actions"><button id="start">Start mystery</button><button id="leave" class="secondary">Leave room</button></div>
+<p class="note">The host can start when 3 or more players have joined.</p></section>
+<section class="panel hidden" id="game"><div class="eyebrow">THE MANSION CASE FILE</div>
+<h2>The missing heirloom</h2><p>A priceless heirloom has vanished from Prachi Mansion. Discuss who might be responsible.</p>
+<div class="panel"><div>Your secret role:</div><div class="role" id="role">Waiting for your role…</div><p id="secret"></p></div>
+<p class="note" id="voteStatus">Discuss the mystery. The host can open voting when everyone is ready.</p>
+<div id="voteChoices" class="players"></div><div class="actions"><button id="openVote">Open voting</button></div>
+<div id="result" class="alert" aria-live="polite"></div></section>
+<div class="alert" id="message" role="status" aria-live="polite"></div>
+<div class="footer">A little mansion mystery made with imagination.</div></main>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(() => {
+const socket=io(), $=id=>document.getElementById(id);
+let room=null, voting=false, voted=false;
+const say=t=>$("message").textContent=t||"";
+const show=(id,on)=>$(id).classList.toggle("hidden",!on);
+const playerName=()=>$("name").value.trim();
+const safe=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+$("create").onclick=()=>socket.emit("room:create",{name:playerName()},r=>{
+ if(!r?.ok)return say(r?.error||"Could not create room.");room=r.room;say("");render();
+});
+$("join").onclick=()=>socket.emit("room:join",{code:$("code").value.trim().toUpperCase(),name:playerName()},r=>{
+ if(!r?.ok)return say(r?.error||"Could not join room.");room=r.room;voting=false;voted=false;say("");render();
+});
+$("code").addEventListener("input",e=>e.target.value=e.target.value.toUpperCase().replace(/[^A-F0-9]/g,"").slice(0,5));
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText(room.code);say("Room code copied!");}catch{say("Room code: "+room.code);}};
+$("start").onclick=()=>socket.emit("game:start",r=>{if(!r?.ok)say(r?.error||"Could not start.");});
+$("openVote").onclick=()=>socket.emit("game:open-vote",r=>{if(!r?.ok)say(r?.error||"Could not open voting.");});
+$("leave").onclick=()=>location.reload();
+
+function render(){
+ if(!room)return;
+ show("entry",false);show("lobby",room.phase==="lobby");show("game",room.phase!=="lobby");
+ $("roomCode").textContent=room.code;$("roomStatus").textContent=room.players.length+" player(s) in the room";
+ $("players").innerHTML=room.players.map(p=>`<div class="player">${safe(p.name)} ${p.isHost?"<small>· Host</small>":""}</div>`).join("");
+ const me=room.players.find(p=>p.id===socket.id);
+ $("start").disabled=room.players.length<3||!me||!me.isHost;
+ $("openVote").classList.toggle("hidden",!(me&&me.isHost&&room.phase==="playing"));
+ if(room.phase==="voting"){voting=true;renderVotes();$("voteStatus").textContent=`Votes received: ${room.voteCount} / ${room.players.length}`;}
+ if(room.phase==="ended"){$("voteChoices").innerHTML="";$("openVote").classList.add("hidden");}
+}
+function renderVotes(){
+ $("voteChoices").innerHTML="";
+ if(!room||!voting||room.phase!=="voting"||voted)return;
+ room.players.filter(p=>p.id!==socket.id).forEach(p=>{
+  const b=document.createElement("button");b.className="secondary";b.textContent="Vote: "+p.name;
+  b.onclick=()=>socket.emit("game:vote",{targetId:p.id},r=>{
+   if(!r?.ok)return say(r?.error||"Vote failed.");voted=true;$("voteChoices").innerHTML="";say("Your vote has been counted.");
+  });
+  $("voteChoices").appendChild(b);
+ });
+}
+socket.on("room:update",r=>{if(room&&r.code===room.code){room=r;render();}});
+socket.on("game:role",r=>{$("role").textContent=r.role;$("secret").textContent=r.secret;});
+socket.on("game:voting",()=>{voting=true;voted=false;$("voteStatus").textContent="Voting is open. Choose who you suspect.";renderVotes();});
+socket.on("game:votes",v=>$("voteStatus").textContent=`Votes received: ${v.count} / ${v.total}`);
+socket.on("game:vote-reset",m=>{voting=false;voted=false;$("voteChoices").innerHTML="";$("voteStatus").textContent=m;});
+socket.on("game:result",r=>{$("voteChoices").innerHTML="";$("openVote").classList.add("hidden");$("voteStatus").textContent="Case closed."; $("result").textContent=`${r.result} The suspect was ${r.culprit}. Most-voted: ${r.votedOut}${r.tie?" (tie)":""}.`;});
+socket.on("connect_error",()=>say("Connection problem. Refresh and try again."));
+socket.on("disconnect",()=>say("Disconnected. Refresh and rejoin the room."));
+})();
+</script></body></html>
